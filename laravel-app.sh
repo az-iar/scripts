@@ -2,9 +2,12 @@
 
 set -e
 
-# Prompt for PostgreSQL password
-read -sp "Enter password for PostgreSQL 'laravel' user: " DB_PASSWORD
+# Prompt for app name and password
+read -p "Enter Laravel app name (e.g. myapp): " APP_NAME
+read -sp "Enter password for PostgreSQL '$APP_NAME' user: " DB_PASSWORD
 echo
+
+APP_DIR="/var/www/$APP_NAME"
 
 # Update system
 echo "🔄 Updating system..."
@@ -37,8 +40,8 @@ systemctl start postgresql
 
 # Create PostgreSQL user and DB
 echo "🧰 Setting up PostgreSQL user and DB..."
-sudo -u postgres psql -c "CREATE USER laravel WITH PASSWORD '$DB_PASSWORD';"
-sudo -u postgres psql -c "CREATE DATABASE laravel OWNER laravel;"
+sudo -u postgres psql -c "CREATE USER $APP_NAME WITH PASSWORD '$DB_PASSWORD';"
+sudo -u postgres psql -c "CREATE DATABASE $APP_NAME OWNER $APP_NAME;"
 
 # Supervisor
 echo "📦 Installing Supervisor..."
@@ -61,11 +64,11 @@ nvm use --lts
 
 # Laravel Nginx vhost
 echo "📜 Setting up Laravel Nginx vhost..."
-cat > /etc/nginx/sites-available/laravel <<EOL
+cat > /etc/nginx/sites-available/$APP_NAME <<EOL
 server {
     listen 80;
     server_name yourdomain.com;
-    root /var/www/html/public;
+    root $APP_DIR/public;
 
     add_header X-Frame-Options "SAMEORIGIN";
     add_header X-Content-Type-Options "nosniff";
@@ -89,7 +92,7 @@ server {
 }
 EOL
 
-ln -s /etc/nginx/sites-available/laravel /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
@@ -99,23 +102,26 @@ apt install -y certbot python3-certbot-nginx
 
 # Laravel Horizon via Supervisor
 echo "🚦 Setting up Supervisor for Laravel Horizon..."
-cat > /etc/supervisor/conf.d/horizon.conf <<EOL
-[program:horizon]
+cat > /etc/supervisor/conf.d/horizon-$APP_NAME.conf <<EOL
+[program:horizon-$APP_NAME]
 process_name=%(program_name)s
-command=php /var/www/html/artisan horizon
+command=php $APP_DIR/artisan horizon
 autostart=true
 autorestart=true
 user=www-data
 redirect_stderr=true
-stdout_logfile=/var/log/supervisor/horizon.log
+stdout_logfile=/var/log/supervisor/horizon-$APP_NAME.log
 EOL
 
 supervisorctl reread
 supervisorctl update
 
-echo "✅ Done! Laravel stack installed successfully."
-echo "⚠️ Don't forget to:"
-echo "- Set your correct domain in /etc/nginx/sites-available/laravel"
-echo "- Run 'certbot --nginx -d yourdomain.com' to enable HTTPS"
-echo "- Place your Laravel app at /var/www/html"
-echo "- Set your DB password in .env to: $DB_PASSWORD"
+echo "✅ Done! Laravel stack installed for $APP_NAME."
+echo "📂 App folder: $APP_DIR"
+echo "🗃️ DB name/user: $APP_NAME"
+echo "🔑 DB password: $DB_PASSWORD"
+echo "📄 Vhost: /etc/nginx/sites-available/$APP_NAME"
+echo "⚠️ Next steps:"
+echo "- Place your Laravel code in $APP_DIR"
+echo "- Set DB settings in .env"
+echo "- Run certbot: certbot --nginx -d yourdomain.com"
